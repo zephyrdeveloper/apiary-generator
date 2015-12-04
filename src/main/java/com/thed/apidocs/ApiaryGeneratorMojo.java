@@ -1,16 +1,37 @@
 package com.thed.apidocs;
 
-import com.google.common.base.Predicate;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Ordering;
-import com.wordnik.swagger.annotations.Api;
-import com.wordnik.swagger.annotations.ApiOperation;
-import com.wordnik.swagger.annotations.ApiParam;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
+import java.util.logging.Logger;
+
+import javax.ws.rs.Consumes;
+import javax.ws.rs.DELETE;
+import javax.ws.rs.GET;
+import javax.ws.rs.POST;
+import javax.ws.rs.PUT;
+import javax.ws.rs.Path;
+import javax.ws.rs.Produces;
+import javax.ws.rs.QueryParam;
+import javax.ws.rs.core.Context;
+
 import org.apache.commons.lang.StringUtils;
-import org.apache.log4j.BasicConfigurator;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Mojo;
+import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.velocity.Template;
 import org.apache.velocity.VelocityContext;
 import org.apache.velocity.app.Velocity;
@@ -22,50 +43,91 @@ import org.reflections.util.ClasspathHelper;
 import org.reflections.util.ConfigurationBuilder;
 import org.springframework.stereotype.Service;
 
-import javax.ws.rs.*;
-import java.io.File;
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.lang.annotation.Annotation;
-import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.logging.Logger;
+import com.google.common.base.Predicate;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Ordering;
+import com.wordnik.swagger.annotations.Api;
+import com.wordnik.swagger.annotations.ApiOperation;
+import com.wordnik.swagger.annotations.ApiParam;
 
-
+/**
+ * Generates apiary documentation
+ *
+ */
+@Mojo(requiresDependencyResolution = ResolutionScope.RUNTIME, name = "generateApiDocs")
+ 
 public class ApiaryGeneratorMojo extends AbstractMojo {
+	
     Logger logger = Logger.getLogger(ApiaryGeneratorMojo.class.getName());
-    final String packageName = "com.thed.service.rest.resource";
-    final String vmFile = "apiary.vm";
-
+    @Parameter
+    private String packageName="com.thed.service.rest.resource.v3";
+    @Parameter
+    private String vmFile = "apiary.vm";
+    private String BASE_PATH = "target/test-classes/apidocsv3/";	// "src/test/resources/apidocs/"
     /**
      * Location of the file.
      * @parameter expression="${project.build.directory}"
      * @required
      */
-    final String outputFileName = "target/apiary.apib";
-
-
-	/**
-	 * @param args
-	 */
-	public static void main(String[] args) {
-		System.getProperties().put("catalina.home", ".");	// for log4j
-		BasicConfigurator.configure();
-        ApiaryGeneratorMojo gen = new ApiaryGeneratorMojo();
-        try {
-            gen.execute();
-        } catch (MojoExecutionException e) {
-            e.printStackTrace();
-        } catch (MojoFailureException e) {
-            e.printStackTrace();
-        }
+    @Parameter
+    private String outputFileName="target/apiary.txt";
+    
+    public ApiaryGeneratorMojo() {
+    	// default
     }
 
-    @Override
+    public ApiaryGeneratorMojo(String packageName, String basePath ,String outputFile) {
+    	this.packageName = packageName;
+    	this.BASE_PATH = basePath;
+    	this.outputFileName = outputFile;
+    }
+    
+
     public void execute() throws MojoExecutionException, MojoFailureException {
-        Reflections reflections = new Reflections(
+    	List<Resource> resourceList = generateResourceList();
+    	File file = generateDocFile(resourceList);
+    }
+    
+    public List<Resource> generateResourceList(){
+
+    	Collection<Class<?>> sortedTypes =getResourceClasses();
+		/*try {
+			sortedTypes = new Util().getClasses(packageName);
+		} catch (ClassNotFoundException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+		} catch (IOException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+		}//getResourceClasses();
+*/        List<Resource> list = new ArrayList<Resource>();
+        for(Class type : sortedTypes){
+            if(type.getName().startsWith(packageName) && type.isInterface()){
+//                System.out.println(type);
+                try {
+					list.add(getResourceMetadata(type));
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+            }
+        }
+
+        return list;
+    }
+    
+    public File generateDocFile(List<Resource> list) {
+        //All resources
+        System.out.println("All resources Found list:-");
+        for (Resource resource : list) {
+			System.out.println(resource.getName());
+		}
+        File file = generateDocs(list);
+        return file;
+    }
+    
+
+	private List<Class<?>> getResourceClasses() {		
+		Reflections reflections = new Reflections(
                 new ConfigurationBuilder()
                         .setUrls(ClasspathHelper.forJavaClassPath())
         );
@@ -79,21 +141,13 @@ public class ApiaryGeneratorMojo extends AbstractMojo {
             }
         };
         List<Class<?>> sortedTypes = order.sortedCopy(Iterables.filter(types, new Predicate<Class<?>>() {
-            @Override
             public boolean apply(Class<?> input) {
                 return input.getName().startsWith(packageName);
             }
         }));
-
-        List<Resource> list = new ArrayList<ApiaryGeneratorMojo.Resource>();
-        for(Class type : sortedTypes){
-            if(type.getName().startsWith(packageName) && type.isInterface()){
-                System.out.println(type);
-                list.add(getResourceMetadata(type));
-            }
-        }
-        generateDocs(list);
-    }
+		return sortedTypes;
+	}
+    
 
 	/* Sample annotations -
 	@Service("zephyrTestcase")
@@ -102,7 +156,7 @@ public class ApiaryGeneratorMojo extends AbstractMojo {
 	@Consumes({MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML})
 	@Api(value = "/testcase", description = "get testcase by id and criteria")
 	*/
-	private Resource getResourceMetadata(Class clazz) {
+	private Resource getResourceMetadata(Class clazz) throws IOException {
 		Resource r = new Resource();
 
 		Annotation[] ann = clazz.getAnnotations() ;
@@ -122,6 +176,7 @@ public class ApiaryGeneratorMojo extends AbstractMojo {
 
 		for (Method m: clazz.getMethods())  {
 			getOperationMetadata(r, m);
+			System.out.println("found method name--"+m.getName());
 		}
 		return r ;
 	}
@@ -141,53 +196,100 @@ public class ApiaryGeneratorMojo extends AbstractMojo {
 	@ApiErrors(value = { @ApiError(code = 400, reason = "Invalid ID supplied"),
 							@ApiError(code = 404, reason = "Testcase not found") })
 	*/
-	private void getOperationMetadata(Resource r, Method m) {
-		Operation op = new Operation();
-		if (m.getAnnotation(GET.class) != null) {
-			op.setRequestType("GET");
-		} else if (m.getAnnotation(POST.class) != null) {
-			op.setRequestType("POST");
-		} else if (m.getAnnotation(PUT.class) != null) {
-			op.setRequestType("PUT");
-		}
-
+	private void getOperationMetadata(Resource r, Method m) throws IOException {
 		Path path = (Path) m.getAnnotation(Path.class);
-		op.setPath(supressDuplicateSlash(r.getPath() + "/" + path.value()));
+		if (path != null) {
+			Operation op = new Operation();
+			if (m.getAnnotation(GET.class) != null) {
+				op.setRequestType("GET");
+			} else if (m.getAnnotation(POST.class) != null) {
+				op.setRequestType("POST");
+			} else if (m.getAnnotation(PUT.class) != null) {
+				op.setRequestType("PUT");
+			} else if (m.getAnnotation(DELETE.class) != null) {
+				op.setRequestType("DELETE");
+			}			
+			op.setPath(supressDuplicateSlash(r.getPath() + "/" + path.value()));
 
-		ApiOperation api = (ApiOperation) m.getAnnotation(ApiOperation.class);
-		if (api != null) {
-			op.setName(api.value());
-			op.setDescription(api.value());	// don't have description, duplicating name value
-		} else {
-			op.setName("TODO: please add description");
-			op.setDescription("TODO: please add description");
-		}
+			ApiOperation api = (ApiOperation) m.getAnnotation(ApiOperation.class);
+			if (api != null) {
+				op.setName(api.value());
+				/*if (StringUtils.isNotBlank(api.notes())) {
+					op.setDescription(api.notes());
+				} else {*/
+				op.setSummary(api.value());	// don't have description, duplicating name value
+				//				}
+				if (StringUtils.isNotBlank(api.notes())) {
+					op.setDescription(api.notes());
+				} else {
+					op.setDescription("TODO: please add Notes");
+				}
 
-		// use Resource's annotation if required
-		if (m.getAnnotation(Produces.class) != null) {
-			Produces produces = (Produces) m.getAnnotation(Produces.class);
-			op.setProduces(StringUtils.join(produces.value(), " "));
-		} else {
-			op.setProduces(r.getProduces());
-		}
+			} else {
+				op.setName("TODO: please add description");
+				op.setDescription("TODO: please add description");
+			}
 
-		if (m.getAnnotation(Consumes.class) != null) {
-			Consumes consumes = (Consumes) m.getAnnotation(Consumes.class);
-			op.setConsumes(StringUtils.join(consumes.value(), " "));
-		} else {
-			op.setConsumes(r.getConsumes());
-		}
+			// use Resource's annotation if required
+			if (m.getAnnotation(Produces.class) != null) {
+				Produces produces = (Produces) m.getAnnotation(Produces.class);
+				op.setProduces(StringUtils.join(produces.value(), " "));
+			} else {
+				op.setProduces(r.getProduces());
+			}
 
-		if (r.getOperations() == null) {
-			r.setOperations(new ArrayList<ApiaryGeneratorMojo.Operation>());
-		}
-		r.getOperations().add(op);
-		op.setJsonRequest(new ArrayList<String>());
-		op.setJsonResponse(new ArrayList<String>());
-		op.setResponseCode("200");
+			if (m.getAnnotation(Consumes.class) != null) {
+				Consumes consumes = (Consumes) m.getAnnotation(Consumes.class);
+				op.setConsumes(StringUtils.join(consumes.value(), " "));
+			} else {
+				op.setConsumes(r.getConsumes());
+			}
 
-		getUrlParameter(r, op, m);
+			if (r.getOperations() == null) {
+				r.setOperations(new ArrayList<Operation>());
+			}
+			r.getOperations().add(op);		
+			op.setJsonRequest(getRequestResponse(r,m,op,new String("request")));
+			op.setJsonResponse(getRequestResponse(r,m,op,new String("response")));
+			op.setResponseCode("200");
+			getUrlParameter(r, op, m);
+		}		
 	}
+
+	// Get the requst/response from a text file on a particular location src/main/resources/apidocs/<resource>/<method>/<request>/response.json e.g. src/main/resources/apidocs/attachment/getAttachment/GET/response.json
+	private List<String> getRequestResponse(Resource r, Method m, Operation op, String exampleString) throws IOException {
+		String file = null;
+		FileInputStream fstream;
+
+		
+		if (exampleString.equals("request")) {
+			if (m.getName().equals("getManifest")) {
+				file =  BASE_PATH + "manifest" + "/" +  m.getName() + "/" + op.getRequestType() +"/" + "request.json";
+			} else {
+				file = BASE_PATH + r.getPath() + "/" +  m.getName() + "/" + op.getRequestType() +"/" + "request.json";
+			}
+		}else {
+			if (m.getName().equals("getManifest")) {
+				file = BASE_PATH + "manifest" + "/" +  m.getName() + "/" + op.getRequestType() +"/" + "response.json";
+			} else {
+				file = BASE_PATH + r.getPath() + "/" +  m.getName() + "/" + op.getRequestType() +"/" + "response.json";
+			}
+		}
+		List<String> list = new ArrayList<String>();
+		File fileReal = new File(file);
+		if(!fileReal.exists()) {
+			return list;
+		}
+		fstream = new FileInputStream(file);
+		BufferedReader br = new BufferedReader(new InputStreamReader(fstream));
+		String line;
+		while ((line = br.readLine()) != null) {
+			list.add(line);
+		}
+		br.close();
+		fstream.close();
+		return list;
+	}	
 
 	private void getUrlParameter(Resource r, Operation op, Method m) {
 		Annotation[][] pa = m.getParameterAnnotations() ;
@@ -204,32 +306,121 @@ public class ApiaryGeneratorMojo extends AbstractMojo {
 				@CookieParam("token") Cookie tokenFromCookie) throws ZephyrServiceException;
 		*/
 		Class[] params = m.getParameterTypes() ;
+		
+		StringBuilder queryParamsPath = new StringBuilder();
 //		TypeVariable<Method>[] tvm = m.getTypeParameters();
 		for (int i = 0; i < pa.length; i++) {
 			Annotation[] eachParam = pa[i] ;
 			// ignore ApiParam or PathParam or CookieParam ignore
 			QueryParam qpAnnotation = hasQueryParam(eachParam) ;
+			
 			if (qpAnnotation != null) {
 
 				if (op.getQueryParams() == null) {
-					List<QueryParameter> queryParams = new ArrayList<ApiaryGeneratorMojo.QueryParameter>();
+					List<QueryParameter> queryParams = new ArrayList<QueryParameter>();
 					op.setQueryParams(queryParams);
+					
 				}
-				
+//				System.out.println(qpAnnotation.value());
 				QueryParameter qParam = new QueryParameter();
 				qParam.setName(qpAnnotation.value());
 				qParam.setType(params[i].getSimpleName());
 				qParam.setDescription(getApiDescription(eachParam));
+				qParam.setIsRequired(getApiRequiredValue(eachParam));
+				queryParamsPath.append(qpAnnotation.value() + ",");
 				op.getQueryParams().add(qParam);
 			}
+			
+			
+			Context contextAnnotation = hasContextAnnotation(eachParam) ;
+			
+			if (contextAnnotation != null) {
+				List<String> names = new ArrayList<String>();
+				List<String> types = new ArrayList<String>();
+				List<String> descriptions = new ArrayList<String>();
+				String allowableValues = getApiAllowableValues(eachParam);
+				int lengthOfQP = parseAllowableValues(names, types, descriptions, allowableValues);
+				if (op.getQueryParams() == null) {
+					List<QueryParameter> queryParams = new ArrayList<QueryParameter>();
+					op.setQueryParams(queryParams);
+					
+				}
+				for (int j=0; j<lengthOfQP; j++) {
+					QueryParameter qParam = new QueryParameter();
+					qParam.setName(names.get(j));
+					qParam.setType(types.get(j));
+					qParam.setDescription(descriptions.get(j));
+					qParam.setIsRequired(getApiRequiredValue(eachParam));
+					queryParamsPath.append(names.get(j) + ",");
+					op.getQueryParams().add(qParam);
+				}
+				
+			}
+			
 		}
+		if (queryParamsPath.length()>0) {
+			if (op.getPath().endsWith("/")) {
+				int index = op.getPath().lastIndexOf("/");
+				op.setPath(op.getPath().substring(0,index));
+			}
+			String path = "{?" + queryParamsPath.deleteCharAt(queryParamsPath.lastIndexOf(","))+"}";
+			op.setPath(op.getPath() + path);
+		}
+		
 		
 	}
 	
+	public int parseAllowableValues(List names, List types, List descriptions, String allowableValues) {
+		String[] params = StringUtils.split(allowableValues, ",");
+		if(params==null) return 0;
+//		allowableValues = "id:number:Id of cycle, name:String: Name of cycle, build:String:Build of cycle, environment:String:Environment of cycle, startDate:Date:Start date of cycle, endDate:Date:End date of cycle, releaseId:Number:Release id of cycle"
+		for(String param : params) {
+			names.add(StringUtils.substringBefore(param, ":"));
+			types.add(StringUtils.substringBetween(param, ":", ":"));
+			descriptions.add(StringUtils.substringAfterLast(param, ":"));
+		}
+		return params.length;
+	}
+	
+	private String getApiValue(Annotation[] eachParam) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	private String getApiAllowableValues(Annotation[] paramAnnotaions) {
+		for (Annotation ax: paramAnnotaions) {
+			if (ax instanceof ApiParam) {
+				return ((ApiParam) ax).allowableValues();
+			}
+		}
+		return null ;
+	}
+	
+
+	private String getApiRequiredValue(Annotation[] paramAnnotaions) {
+		for (Annotation ax: paramAnnotaions) {
+			if (ax instanceof ApiParam) {
+				if (((ApiParam) ax).required()) {
+					return "required";
+				}
+			}
+		}
+		return "optional";
+	}
+
 	private QueryParam hasQueryParam(Annotation[] paramAnnotaions) {
 		for (Annotation ax: paramAnnotaions) {
 			if (ax instanceof QueryParam) {
 				return (QueryParam) ax ;
+			}
+		}
+		return null ;
+	}
+	
+	private Context hasContextAnnotation(Annotation[] paramAnnotaions) {
+		for (Annotation ax: paramAnnotaions) {
+			if (ax instanceof Context) {
+				return (Context) ax ;
 			}
 		}
 		return null ;
@@ -243,46 +434,20 @@ public class ApiaryGeneratorMojo extends AbstractMojo {
 		}
 		return "TODO: please provide a description" ;
 	}
+
 	
 	private String supressDuplicateSlash(String s) {
 		String rep = s.replaceAll("//", "/");
 		return rep ;
 	}
 	
-	/* prototyping 
-	private List<Resource> gatherData() {
-		List<Resource> resources = new ArrayList<Resource>();
-		Resource r = new Resource();
-		r.setName("Testcase");
-		r.setGroupNotes("Create a testcase");
-		
-		List<Operation> ops = new ArrayList<Operation>();
-		Operation op = new Operation();
-		op.setName("create");
-		op.setDescription("Some description");
-		op.setRequestType("POST");
-		op.setPath("/testcase");
-		op.setProduces("application/json");
-		
-		List<String> jsonResponse = new ArrayList<String>();
-		jsonResponse.add("[{");
-		jsonResponse.add("\"id\": 1, \"title\": \"Test..... in park\"");
-		jsonResponse.add	("}]");		
-		op.setJsonResponse(jsonResponse);
-		op.setResponseCode("200");
-		ops.add(op);
-		
-		r.setOperations(ops);
-		resources.add(r);
-		return resources ;
-	}
-	*/
 
     /**
      *
      * @param resources
+     * @return 
      */
-	private void generateDocs(List<Resource> resources) {
+	private File generateDocs(List<Resource> resources) {
 		Velocity.init();
 		VelocityContext context = new VelocityContext();
 		context.put("name", new String("Velocity"));
@@ -299,175 +464,42 @@ public class ApiaryGeneratorMojo extends AbstractMojo {
 			template = ve.getTemplate(vmFile);
 			StringWriter sw = new StringWriter();
 			template.merge(context, sw);
-			pw = new PrintWriter(new File(outputFileName));
+			File file = new File(outputFileName);
+			pw = new PrintWriter(file);
             pw.write(sw.toString());
             pw.flush();
             logger.fine("Log file is generated " + outputFileName);
+            return file;
 		} catch (Exception e) {
 			e.printStackTrace();
 		}finally{
             pw.close();
         }
-	}
-
-    /**
-     *
-     */
-    public class Resource {
-		private String name ;
-		private String groupNotes ;
-		private String path ;
-		private String produces ;
-		private String consumes ;
-		private List<Operation> operations ;
-		
-		public String getName() {
-			return name;
-		}
-		public void setName(String name) {
-			this.name = name;
-		}
-		public String getGroupNotes() {
-			return groupNotes;
-		}
-		public void setGroupNotes(String groupNotes) {
-			this.groupNotes = groupNotes;
-		}
-		public List<Operation> getOperations() {
-			return operations;
-		}
-		public void setOperations(List<Operation> operations) {
-			this.operations = operations;
-		}
-		public String getPath() {
-			return path;
-		}
-		public void setPath(String path) {
-			this.path = path;
-		}
-		public String getProduces() {
-			return produces;
-		}
-		public void setProduces(String produces) {
-			this.produces = produces;
-		}
-		public String getConsumes() {
-			return consumes;
-		}
-		public void setConsumes(String consumes) {
-			this.consumes = consumes;
-		}
-		
-	}
+		return null;
+	}	
 	
-	public class Operation {
-		private String name ;
-		private String description ;
-		private String path ;
-		/** POST, GET, etc */
-		private String requestType ;
-		
-		// e.g. "application/json". If multiple values, exist, provide a final value to be put.
-		private String consumes ;
-		
-		/** Line by line text of request json */
-		private List<String> jsonRequest ;
+	 public String getPackageName() {
+			return packageName;
+		}
 
-		// e.g. "application/json". If multiple values, exist, provide a final value to be put.
-		private String produces ;
-		
-		/** Line by line text of response json */
-		private List<String> jsonResponse ;
-		/** e.g. 200 */
-		private String responseCode ;
-		
-		private List<QueryParameter> queryParams ;		
-		
-		public String getName() {
-			return name;
+		public void setPackageName(String packageName) {
+			this.packageName = packageName;
 		}
-		public void setName(String name) {
-			this.name = name;
+
+		public String getVmFile() {
+			return vmFile;
 		}
-		public String getDescription() {
-			return description;
+
+		public void setVmFile(String vmFile) {
+			this.vmFile = vmFile;
 		}
-		public void setDescription(String description) {
-			this.description = description;
+
+		public String getOutputFileName() {
+			return outputFileName;
 		}
-		public String getPath() {
-			return path;
+
+		public void setOutputFileName(String outputFileName) {
+			this.outputFileName = outputFileName;
 		}
-		public void setPath(String path) {
-			this.path = path;
-		}
-		public String getRequestType() {
-			return requestType;
-		}
-		public void setRequestType(String requestType) {
-			this.requestType = requestType;
-		}
-		public List<String> getJsonRequest() {
-			return jsonRequest;
-		}
-		public void setJsonRequest(List<String> jsonRequest) {
-			this.jsonRequest = jsonRequest;
-		}
-		public List<String> getJsonResponse() {
-			return jsonResponse;
-		}
-		public void setJsonResponse(List<String> jsonResponse) {
-			this.jsonResponse = jsonResponse;
-		}
-		public String getResponseCode() {
-			return responseCode;
-		}
-		public void setResponseCode(String responseCode) {
-			this.responseCode = responseCode;
-		}
-		public String getConsumes() {
-			return consumes;
-		}
-		public void setConsumes(String consumes) {
-			this.consumes = consumes;
-		}
-		public String getProduces() {
-			return produces;
-		}
-		public void setProduces(String produces) {
-			this.produces = produces;
-		}
-		public List<QueryParameter> getQueryParams() {
-			return queryParams;
-		}
-		public void setQueryParams(List<QueryParameter> queryParams) {
-			this.queryParams = queryParams;
-		}
-		
-	}
-	
-	public class QueryParameter {
-		private String name ;
-		private String type ;
-		private String description ;
-		public String getName() {
-			return name;
-		}
-		public void setName(String name) {
-			this.name = name;
-		}
-		public String getType() {
-			return type;
-		}
-		public void setType(String type) {
-			this.type = type;
-		}
-		public String getDescription() {
-			return description;
-		}
-		public void setDescription(String description) {
-			this.description = description;
-		}
-	}
 
 }
