@@ -1,16 +1,11 @@
 package com.thed.apidocs;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class Operation {
 	private String name ;
 	private String summary ;
-	public String getSummary() {
-		return summary;
-	}
-	public void setSummary(String summary) {
-		this.summary = summary;
-	}
 	private String description ;
 	private String path ;
 	/** POST, GET, etc */
@@ -31,6 +26,9 @@ public class Operation {
 	private String responseCode ;
 	
 	private List<QueryParameter> queryParams ;
+	
+	private List<PathParameter> pathParam ;
+	
 	
 	public String getName() {
 		return name;
@@ -92,6 +90,23 @@ public class Operation {
 	public void setQueryParams(List<QueryParameter> queryParams) {
 		this.queryParams = queryParams;
 	}
+
+	public String getSummary() {
+		return summary;
+	}
+	public void setSummary(String summary) {
+		this.summary = summary;
+	}
+	public List<PathParameter> getPathParam() {
+		return pathParam;
+	}
+	public void addPathParam(PathParameter pathParam) {
+		if(this.pathParam == null) {
+			this.pathParam = new ArrayList<>();
+		}
+		this.pathParam.add(pathParam);
+	}
 	
+
 }
 

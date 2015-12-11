@@ -7,6 +7,9 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import com.thed.apiaryGenerator.ApiaryGeneratorMojo;
+import com.thed.apiaryGenerator.Resource;
+
 /**
  * Created by smangal on 5/22/14.
  */
@@ -22,32 +25,34 @@ public class ApiaryGeneratorMojoTest {
         if(file.exists()){
             file.delete();
         }
-        File file1 = new File("target/apiary1.txt");
-        if(file1.exists()){
-        	file1.delete();
-        }
     }
 
     @Test
-    public void testExecuteMaven() throws Exception {
+    public void testExecute() throws Exception {
         String fileName = "target/apiary.txt";
 		File file = new File(fileName);
         System.out.println("apiary.txt file path--"+file.getAbsolutePath());
         Assert.assertFalse(file.exists());
-        ApiaryGeneratorMojo mojo = new ApiaryGeneratorMojo();
+        ApiaryGeneratorMojo mojo = new ApiaryGeneratorMojo(packageName,BASE_PATH,fileName);
         mojo.execute();
         Assert.assertTrue(file.exists());
     }
 
     @Test
     public void testExecuteTwoStep() throws Exception {
-    	String fileName = "target/apiary1.txt";
+    	String fileName = "target/apiary.txt";
 		File file = new File(fileName);
-    	System.out.println("apiary1.txt file path--"+file.getAbsolutePath());
+    	System.out.println("apiary.txt file path--"+file.getAbsolutePath());
     	Assert.assertFalse(file.exists());
     	ApiaryGeneratorMojo mojo = new ApiaryGeneratorMojo(packageName,BASE_PATH,fileName);
-    	List<Resource> generateResourceList = mojo.generateResourceList();
-    	File generateDocFile = mojo.generateDocFile(generateResourceList);
+    	List<Resource> resourceList = mojo.generateResourceList();
+        //All resources
+      System.out.println("All resources");
+      for (Resource resource : resourceList) {
+			System.out.println(resource.getName());
+		}
+
+    	File generateDocFile = mojo.generateDocFile(resourceList);
     	System.out.println(generateDocFile);
     	Assert.assertTrue(file.exists());
     }

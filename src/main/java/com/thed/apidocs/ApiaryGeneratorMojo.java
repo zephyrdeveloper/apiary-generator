@@ -21,6 +21,7 @@ import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
@@ -117,10 +118,10 @@ public class ApiaryGeneratorMojo extends AbstractMojo {
     
     public File generateDocFile(List<Resource> list) {
         //All resources
-        System.out.println("All resources Found list:-");
-        for (Resource resource : list) {
-			System.out.println(resource.getName());
-		}
+//        System.out.println("All resources");
+//        for (Resource resource : list) {
+//			System.out.println(resource.getName());
+//		}
         File file = generateDocs(list);
         return file;
     }
@@ -176,7 +177,7 @@ public class ApiaryGeneratorMojo extends AbstractMojo {
 
 		for (Method m: clazz.getMethods())  {
 			getOperationMetadata(r, m);
-			System.out.println("found method name--"+m.getName());
+//			System.out.println("method name--"+m.getName());
 		}
 		return r ;
 	}
@@ -331,6 +332,18 @@ public class ApiaryGeneratorMojo extends AbstractMojo {
 				op.getQueryParams().add(qParam);
 			}
 			
+			PathParam pathParamAnno = hasPathParam(eachParam) ;
+			
+			if (pathParamAnno != null) {
+				PathParameter pathParam = new PathParameter();
+				pathParam.setName(pathParamAnno.value());
+				pathParam.setType(params[i].getSimpleName());
+				pathParam.setDescription(getApiDescription(eachParam));
+				pathParam.setIsRequired("required");
+				pathParam.setValue(pathParamAnno.value());
+				op.addPathParam(pathParam);
+			}
+			
 			
 			Context contextAnnotation = hasContextAnnotation(eachParam) ;
 			
@@ -366,6 +379,7 @@ public class ApiaryGeneratorMojo extends AbstractMojo {
 			String path = "{?" + queryParamsPath.deleteCharAt(queryParamsPath.lastIndexOf(","))+"}";
 			op.setPath(op.getPath() + path);
 		}
+//		System.out.println(op.getPath());
 		
 		
 	}
@@ -412,6 +426,14 @@ public class ApiaryGeneratorMojo extends AbstractMojo {
 		for (Annotation ax: paramAnnotaions) {
 			if (ax instanceof QueryParam) {
 				return (QueryParam) ax ;
+			}
+		}
+		return null ;
+	}
+	private PathParam hasPathParam(Annotation[] paramAnnotaions) {
+		for (Annotation ax: paramAnnotaions) {
+			if (ax instanceof PathParam) {
+				return (PathParam) ax ;
 			}
 		}
 		return null ;
